@@ -54,12 +54,12 @@ func (s *server) start() error {
 		return err
 	}
 
-	s.logger.Info(fmt.Sprintf("Linko is running on http://localhost:%d", ln.Addr().(*net.TCPAddr).Port))
+	s.logger.Debug(fmt.Sprintf("Linko is running on http://localhost:%d", ln.Addr().(*net.TCPAddr).Port))
 	return nil
 }
 
 func (s *server) shutdown(ctx context.Context) error {
-	s.logger.Info("Linko is shutting down")
+	s.logger.Debug("Linko is shutting down")
 	return s.httpServer.Shutdown(ctx)
 }
 
