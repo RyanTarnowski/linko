@@ -46,13 +46,13 @@ func (s *server) handlerShortenLink(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "missing url parameter", http.StatusBadRequest)
 		return
 	}
-	s.logger.Info(fmt.Sprintf("Shortening URL:", longURL))
+	s.logger.Info("Shortening URL", slog.String("url", longURL))
 	u, err := url.Parse(longURL)
 	if err != nil || u.Scheme == "" || u.Host == "" {
 		http.Error(w, "invalid URL: must include scheme (http/https) and host", http.StatusBadRequest)
 		return
 	}
-	s.logger.Info(fmt.Sprintf("Parsed URL: scheme=%s, host=%s", u.Scheme, u.Host))
+	s.logger.Info("Parsed URL", slog.String("scheme", u.Scheme), slog.String("host", u.Host))
 	if err := checkDestination(longURL); err != nil {
 		http.Error(w, fmt.Sprintf("invalid target URL: %v", err), http.StatusBadRequest)
 		return
@@ -62,7 +62,7 @@ func (s *server) handlerShortenLink(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "failed to shorten URL", http.StatusInternalServerError)
 		return
 	}
-	s.logger.Info(fmt.Sprintf("Generated short code: %s for URL: %s", shortCode, longURL))
+	s.logger.Info("Generated short code", slog.String("shortCode", shortCode), slog.String("longURL", longURL))
 	w.Header().Set("Content-Type", "text/plain")
 	w.WriteHeader(http.StatusCreated)
 	io.WriteString(w, shortCode)
@@ -74,7 +74,7 @@ func (s *server) handlerRedirect(w http.ResponseWriter, r *http.Request) {
 		if errors.Is(err, store.ErrNotFound) {
 			http.Error(w, "not found", http.StatusNotFound)
 		} else {
-			s.logger.Error(fmt.Sprintf("failed to lookup URL: %v", err))
+			s.logger.Error("failed to lookup URL", slog.Any("err", err))
 			http.Error(w, "internal server error", http.StatusInternalServerError)
 		}
 		return
@@ -95,7 +95,7 @@ func (s *server) handlerRedirect(w http.ResponseWriter, r *http.Request) {
 func (s *server) handlerListURLs(w http.ResponseWriter, r *http.Request) {
 	codes, err := s.store.List(r.Context())
 	if err != nil {
-		s.logger.Error(fmt.Sprintf("failed to list URLs: %v", err))
+		s.logger.Error("failed to list URLs", slog.Any("err", err))
 		http.Error(w, "failed to list URLs", http.StatusInternalServerError)
 		return
 	}
@@ -125,7 +125,12 @@ func requestLogger(logger *slog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			next.ServeHTTP(w, r)
-			logger.Info(fmt.Sprintf("Served request: %s %s", r.Method, r.URL.Path))
+
+			logger.Info("Served request",
+				slog.String("method", r.Method),
+				slog.String("path", r.URL.Path),
+				slog.String("client_ip", r.RemoteAddr),
+			)
 		})
 	}
 }
