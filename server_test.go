@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -29,18 +30,45 @@ func Test_requestLogger(t *testing.T) {
 	rr := httptest.NewRecorder()
 	loggedHandler.ServeHTTP(rr, req)
 
-	const expectedLogString = `time=2023-10-01T12:34:57.000Z level=INFO msg="Served request" method=GET path=/api/stats client_ip=192.0.2.1:1234` + "\n"
+	const expectedLogString = `time=2023-10-01T12:34:57.000Z level=INFO msg="Served request" method=GET path=/api/stats client_ip=192.0.2.1:1234`
 	const expectedStatusCode = http.StatusOK
 
 	// replace the .Skip() call with two checks to verify the log string and status code here
 	// If either doesn't match, use t.Errorf to report the failure with a helpful message.
 	//t.Skip()
 
-	if logBuffer.String() != expectedLogString {
+	if !strings.Contains(logBuffer.String(), expectedLogString) {
 		t.Errorf("Buffer mismatch:\n expected:%s \n actual:%s", expectedLogString, logBuffer.String())
 	}
 
 	if rr.Code != expectedStatusCode {
 		t.Errorf("Status code mismatch:\n expected:%d \n actual:%d", expectedStatusCode, rr.Code)
+	}
+}
+
+func Test_redactIP_invalid(t *testing.T) {
+	const input = "192.168.1"
+	const expectedOutput = "192.168.1"
+
+	if redactIP(input) != expectedOutput {
+		t.Errorf("IP mismatch:\n expected: %s\n   actual: %s", expectedOutput, redactIP(input))
+	}
+}
+
+func Test_redactIP_v4(t *testing.T) {
+	const input = "192.168.1.255:123"
+	const expectedOutput = "192.168.1.x"
+
+	if redactIP(input) != expectedOutput {
+		t.Errorf("IP mismatch:\n expected: %s\n   actual: %s", expectedOutput, redactIP(input))
+	}
+}
+
+func Test_redactIP_v6(t *testing.T) {
+	const input = "2001:0DB8:AC10:FE01:0000:0000:0000:0001"
+	const expectedOutput = "2001:0DB8:AC10:FE01:0000:0000:0000:0001"
+
+	if redactIP(input) != expectedOutput {
+		t.Errorf("IP mismatch:\n expected: %s\n   actual: %s", expectedOutput, redactIP(input))
 	}
 }

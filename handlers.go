@@ -6,9 +6,12 @@ import (
 	_ "embed"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"strings"
 	"sync"
@@ -53,14 +56,14 @@ func (s *server) handlerShortenLink(w http.ResponseWriter, r *http.Request) {
 	//s.logger.Info("Shortening URL", slog.String("url", longURL))
 	u, err := url.Parse(longURL)
 	if err != nil || u.Scheme == "" || u.Host == "" {
-		httpError(r.Context(), w, http.StatusBadRequest, errors.New("bad requets"))
+		httpError(r.Context(), w, http.StatusBadRequest, errors.New("invalid URL: must include scheme (http/https) and host"))
 		//http.Error(w, "invalid URL: must include scheme (http/https) and host", http.StatusBadRequest)
 		return
 	}
 	//s.logger.Info("Parsed URL", slog.String("scheme", u.Scheme), slog.String("host", u.Host))
 	if err := checkDestination(longURL); err != nil {
 
-		httpError(r.Context(), w, http.StatusBadRequest, errors.New("bad requets"))
+		httpError(r.Context(), w, http.StatusBadRequest, fmt.Errorf("invalid target URL: %w", err))
 		//http.Error(w, fmt.Sprintf("invalid target URL: %v", err), http.StatusBadRequest)
 		return
 	}
@@ -70,7 +73,7 @@ func (s *server) handlerShortenLink(w http.ResponseWriter, r *http.Request) {
 		//http.Error(w, "failed to shorten URL", http.StatusInternalServerError)
 		return
 	}
-	s.logger.Info("Successfully generated short code", slog.String("shortCode", shortCode), slog.String("longURL", longURL))
+	s.logger.Info("Successfully generated short code", slog.String("short_code", shortCode), slog.String("long_url", longURL))
 	w.Header().Set("Content-Type", "text/plain")
 	w.WriteHeader(http.StatusCreated)
 	io.WriteString(w, shortCode)
@@ -169,7 +172,7 @@ func requestLogger(logger *slog.Logger) func(http.Handler) http.Handler {
 			attrs := []any{
 				slog.String("method", r.Method),
 				slog.String("path", r.URL.Path),
-				slog.String("client_ip", r.RemoteAddr),
+				slog.String("client_ip", redactIP(r.RemoteAddr)),
 				slog.Duration("duration", time.Since(start)),
 				slog.Int("request_body_bytes", spyReader.bytesRead),
 				slog.Int("response_status", spyWriter.statusCode),
@@ -194,7 +197,15 @@ func httpError(ctx context.Context, w http.ResponseWriter, status int, err error
 	if logCtx, ok := ctx.Value(logContextKey).(*LogContext); ok {
 		logCtx.Error = err
 	}
-	http.Error(w, err.Error(), status)
+
+	var errText = err.Error()
+
+	switch status {
+	case http.StatusUnauthorized, http.StatusForbidden, http.StatusInternalServerError:
+		errText = http.StatusText(status)
+	}
+
+	http.Error(w, errText, status)
 }
 
 const logContextKey contextKey = "log_context"
@@ -233,4 +244,37 @@ func (w *spyResponseWriter) Write(p []byte) (int, error) {
 func (w *spyResponseWriter) WriteHeader(statusCode int) {
 	w.statusCode = statusCode
 	w.ResponseWriter.WriteHeader(statusCode)
+}
+
+func redactIP(address string) string {
+	host, _, err := net.SplitHostPort(address)
+	if err != nil {
+		return address
+	}
+
+	addr, err := netip.ParseAddr(host)
+	if err != nil {
+		return address
+	}
+
+	if addr.Is4() {
+		return host[:strings.LastIndex(host, ".")+1] + "x"
+	}
+
+	return address
+}
+
+func redactIP_boots(addr string) string {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		host = addr
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return host
+	}
+	if ip4 := ip.To4(); ip4 != nil {
+		return fmt.Sprintf("%d.%d.%d.x", ip4[0], ip4[1], ip4[2])
+	}
+	return ip.String()
 }
